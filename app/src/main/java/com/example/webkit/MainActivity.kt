@@ -10,7 +10,11 @@ import android.view.KeyEvent
 import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.webkit.*
+import androidx.webkit.TracingConfig
+import androidx.webkit.TracingConfig.CATEGORIES_WEB_DEVELOPER
+import androidx.webkit.TracingController
 import kotlinx.android.synthetic.main.activity_main.*
+import java.util.concurrent.Executor
 
 
 class MainActivity : AppCompatActivity() {
@@ -27,6 +31,14 @@ class MainActivity : AppCompatActivity() {
         swipeRefreshLayout.setOnRefreshListener {
             webView.reload()
             swipeRefreshLayout.isRefreshing = false
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.TRACING_CONTROLLER_BASIC_USAGE)) {
+            val tracingController = TracingController.getInstance()
+            tracingController.start(
+                TracingConfig.Builder()
+                    .addCategories(CATEGORIES_WEB_DEVELOPER).build()
+            )
         }
 
         webView.apply {
@@ -58,18 +70,64 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "isMultiProcessEnabled: " +  WebViewCompat.isMultiProcessEnabled())
         }
 
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.START_SAFE_BROWSING)) {
+         if (WebViewFeature.isFeatureSupported(WebViewFeature.START_SAFE_BROWSING)) {
             WebViewCompat.startSafeBrowsing(this.applicationContext) { value ->
                 Log.d(TAG, "WebViewCompat.startSafeBrowsing: $value")
             }
         }
 
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            // proxy1.comが失敗したら、次はproxy2.comのように上から順番に試していく
+            val proxyConfig = ProxyConfig.Builder()
+                .addProxyRule("proxy1.com")
+                .addProxyRule("proxy2.com", ProxyConfig.MATCH_HTTP)
+                .addProxyRule("proxy3.com", ProxyConfig.MATCH_HTTPS)
+                .addBypassRule("www.google.*") // プロキシ設定除外のホスト
+                .build()
+
+            // リスナーのためのExecutor
+            val executor = Executor { Log.d(TAG, "${Thread.currentThread().name} : executor") }
+
+            // プロキシ設定変更が受付された時に呼ばれる？呼ばれないような…
+            val listener = Runnable { Log.d(TAG, "${Thread.currentThread().name} : listener") }
+
+            // WebViewのプロキシ設定をシステム設定から上書き
+            ProxyController.getInstance().setProxyOverride(proxyConfig, executor, listener)
+
+            // システム設定に戻す
+            ProxyController.getInstance().clearProxyOverride(executor, listener)
+        }
+
         if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-            WebSettingsCompat.getForceDark(webView.settings)
+            //WebSettingsCompat.getForceDark(webView.settings)
+            //WebSettingsCompat.setForceDark(webView.settings, WebSettingsCompat.FORCE_DARK_AUTO)
+            //WebSettingsCompat.setForceDark(webView.settings, WebSettingsCompat.FORCE_DARK_OFF)
             WebSettingsCompat.setForceDark(webView.settings, WebSettingsCompat.FORCE_DARK_ON)
         }
 
         webView.loadUrl("https://www.google.co.jp/")
+
+        // ローカルHTMLの表示方法
+        /*
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", AssetsPathHandler(this)) // main/assetsディレクトリの登録
+            .addPathHandler("/res/", ResourcesPathHandler(this)) // main/resディレクトリの登録
+            .build()
+
+        webView.webViewClient = object : WebViewClient() {
+            // リクエストURLをフックしてローカルのファイルを表示
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                return assetLoader.shouldInterceptRequest(request.url)
+            }
+        }
+
+        // アプリのデフォルトドメインは"appassets.androidplatform.net"
+        // main/assets/www/index.htmlをロード
+        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
+        */
     }
 
     override fun onDestroy() {
